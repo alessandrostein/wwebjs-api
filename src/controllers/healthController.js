@@ -5,15 +5,30 @@ const { sessionFolderPath, presenceReleaseUrl, presenceReleaseToken, servicePort
 const { sendErrorResponse } = require('../utils')
 const { logger } = require('../logger')
 
+const localApiHeaders = () => (globalApiKey ? { 'x-api-key': globalApiKey } : {})
+
 const resolveLidToPhone = async (sessionId, contactId) => {
-  const headers = globalApiKey ? { 'x-api-key': globalApiKey } : {}
   const res = await axios.post(
     `http://127.0.0.1:${servicePort}/client/getContactById/${sessionId}`,
     { contactId },
-    { headers, timeout: 5000 }
+    { headers: localApiHeaders(), timeout: 5000 }
   )
   return res?.data?.contact?.id?.user || null
 }
+
+const replyToWhatsApp = async (sessionId, chatId, quotedMessageId, text) => {
+  await axios.post(
+    `http://127.0.0.1:${servicePort}/client/sendMessage/${sessionId}`,
+    { chatId, contentType: 'string', content: text, options: { quotedMessageId } },
+    { headers: localApiHeaders(), timeout: 10000 }
+  )
+}
+
+const normalizeKeyword = (s) => (s || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, '')
 
 const forwardPresenceRelease = async (body) => {
   if (!presenceReleaseUrl || !presenceReleaseToken) return
@@ -23,12 +38,16 @@ const forwardPresenceRelease = async (body) => {
   const fromMe = msg?._data?.id?.fromMe === true
   if (fromMe || from.endsWith('@g.us')) return
 
+  const sessionId = body.sessionId
+  const messageId = msg?._data?.id?._serialized || msg?.id?._serialized
+  const messageBody = msg?.body || msg?._data?.body || ''
+
   let phoneNumber = null
   if (from.endsWith('@c.us')) {
     phoneNumber = from.slice(0, -'@c.us'.length)
-  } else if (from.endsWith('@lid') && body.sessionId) {
+  } else if (from.endsWith('@lid') && sessionId) {
     try {
-      phoneNumber = await resolveLidToPhone(body.sessionId, from)
+      phoneNumber = await resolveLidToPhone(sessionId, from)
     } catch (err) {
       logger.warn({ err: err.message, from }, 'failed to resolve @lid contact')
       return
@@ -36,15 +55,26 @@ const forwardPresenceRelease = async (body) => {
   }
   if (!phoneNumber) return
 
+  let replyText = null
   try {
-    await axios.post(presenceReleaseUrl, { phone_number: phoneNumber }, {
+    const res = await axios.post(presenceReleaseUrl, { phone_number: phoneNumber }, {
       headers: { Authorization: `Bearer ${presenceReleaseToken}` },
       timeout: 5000
     })
+    replyText = res.data?.message || null
   } catch (err) {
     const status = err.response?.status
-    if (status === 404) return
+    const errMessage = err.response?.data?.message
     logger.warn({ err: err.message, status, phoneNumber }, 'presence release webhook failed')
+    if (!normalizeKeyword(messageBody).includes('continuarjogando')) return
+    replyText = errMessage || 'Não consegui processar a liberação agora. Tenta de novo em alguns instantes.'
+  }
+
+  if (!replyText || !sessionId || !messageId) return
+  try {
+    await replyToWhatsApp(sessionId, from, messageId, replyText)
+  } catch (err) {
+    logger.warn({ err: err.message, phoneNumber }, 'failed to reply to whatsapp')
   }
 }
 
