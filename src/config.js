@@ -27,6 +27,7 @@ const basePath = process.env.BASE_PATH || '/'
 const trustProxy = process.env.TRUST_PROXY ? (process.env.TRUST_PROXY).toLowerCase() === 'true' : false
 const presenceReleaseUrl = process.env.PRESENCE_RELEASE_URL || null
 const presenceReleaseToken = process.env.PRESENCE_RELEASE_TOKEN || null
+const presenceAutoReplyEnabled = (process.env.PRESENCE_AUTO_REPLY_ENABLED || '').toLowerCase() === 'true'
 
 module.exports = {
   servicePort,
@@ -53,5 +54,6 @@ module.exports = {
   basePath,
   trustProxy,
   presenceReleaseUrl,
-  presenceReleaseToken
+  presenceReleaseToken,
+  presenceAutoReplyEnabled
 }

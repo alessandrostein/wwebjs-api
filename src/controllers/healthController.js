@@ -1,7 +1,7 @@
 const fsp = require('fs').promises
 const axios = require('axios')
 const qrcode = require('qrcode-terminal')
-const { sessionFolderPath, presenceReleaseUrl, presenceReleaseToken, servicePort, globalApiKey } = require('../config')
+const { sessionFolderPath, presenceReleaseUrl, presenceReleaseToken, presenceAutoReplyEnabled, servicePort, globalApiKey } = require('../config')
 const { sendErrorResponse } = require('../utils')
 const { logger } = require('../logger')
 
@@ -69,6 +69,8 @@ const forwardPresenceRelease = async (body) => {
     replyText = err.response?.data?.message || 'Não consegui processar a liberação agora. Tenta de novo em alguns instantes.'
     logger.warn({ err: err.message, status, phoneNumber }, 'presence release webhook failed')
   }
+
+  if (!presenceAutoReplyEnabled) return
 
   // Reply unconditionally only on confirmed release; otherwise require the
   // explicit trigger phrase to avoid spamming users in unrelated chats.
