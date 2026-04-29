@@ -56,20 +56,23 @@ const forwardPresenceRelease = async (body) => {
   if (!phoneNumber) return
 
   let replyText = null
+  let responseSuccess = false
   try {
     const res = await axios.post(presenceReleaseUrl, { phone_number: phoneNumber }, {
       headers: { Authorization: `Bearer ${presenceReleaseToken}` },
       timeout: 5000
     })
     replyText = res.data?.message || null
+    responseSuccess = res.data?.success === true
   } catch (err) {
     const status = err.response?.status
-    const errMessage = err.response?.data?.message
+    replyText = err.response?.data?.message || 'Não consegui processar a liberação agora. Tenta de novo em alguns instantes.'
     logger.warn({ err: err.message, status, phoneNumber }, 'presence release webhook failed')
-    if (!normalizeKeyword(messageBody).includes('continuarjogando')) return
-    replyText = errMessage || 'Não consegui processar a liberação agora. Tenta de novo em alguns instantes.'
   }
 
+  // Reply unconditionally only on confirmed release; otherwise require the
+  // explicit trigger phrase to avoid spamming users in unrelated chats.
+  if (!responseSuccess && !normalizeKeyword(messageBody).includes('continuarjogando')) return
   if (!replyText || !sessionId || !messageId) return
   try {
     await replyToWhatsApp(sessionId, from, messageId, replyText)
