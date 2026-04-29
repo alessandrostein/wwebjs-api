@@ -1,8 +1,25 @@
 const fsp = require('fs').promises
+const axios = require('axios')
 const qrcode = require('qrcode-terminal')
-const { sessionFolderPath } = require('../config')
+const { sessionFolderPath, presenceReleaseUrl, presenceReleaseToken } = require('../config')
 const { sendErrorResponse } = require('../utils')
 const { logger } = require('../logger')
+
+const forwardPresenceRelease = (body) => {
+  if (!presenceReleaseUrl || !presenceReleaseToken) return
+  if (body?.dataType !== 'message') return
+  const msg = body?.data?.message
+  const from = msg?.from || ''
+  const fromMe = msg?._data?.id?.fromMe === true
+  if (fromMe || !from.endsWith('@c.us')) return
+  const phoneNumber = from.slice(0, -'@c.us'.length)
+  axios.post(presenceReleaseUrl, { phone_number: phoneNumber }, {
+    headers: { Authorization: `Bearer ${presenceReleaseToken}` },
+    timeout: 5000
+  }).catch((err) => {
+    logger.warn({ err: err.message, phoneNumber }, 'presence release webhook failed')
+  })
+}
 
 /**
  * Responds to request with 'pong'
@@ -67,6 +84,7 @@ const localCallbackExample = async (req, res) => {
     if (dataType === 'qr') { qrcode.generate(data.qr, { small: true }) }
     await fsp.mkdir(sessionFolderPath, { recursive: true })
     await fsp.writeFile(`${sessionFolderPath}/message_log.txt`, `${JSON.stringify(req.body)}\r\n`, { flag: 'a+' })
+    forwardPresenceRelease(req.body)
     res.json({ success: true })
   } catch (error) {
     /* #swagger.responses[500] = {
