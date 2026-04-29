@@ -1,24 +1,51 @@
 const fsp = require('fs').promises
 const axios = require('axios')
 const qrcode = require('qrcode-terminal')
-const { sessionFolderPath, presenceReleaseUrl, presenceReleaseToken } = require('../config')
+const { sessionFolderPath, presenceReleaseUrl, presenceReleaseToken, servicePort, globalApiKey } = require('../config')
 const { sendErrorResponse } = require('../utils')
 const { logger } = require('../logger')
 
-const forwardPresenceRelease = (body) => {
+const resolveLidToPhone = async (sessionId, contactId) => {
+  const headers = globalApiKey ? { 'x-api-key': globalApiKey } : {}
+  const res = await axios.post(
+    `http://127.0.0.1:${servicePort}/client/getContactById/${sessionId}`,
+    { contactId },
+    { headers, timeout: 5000 }
+  )
+  return res?.data?.contact?.id?.user || null
+}
+
+const forwardPresenceRelease = async (body) => {
   if (!presenceReleaseUrl || !presenceReleaseToken) return
   if (body?.dataType !== 'message') return
   const msg = body?.data?.message
   const from = msg?.from || ''
   const fromMe = msg?._data?.id?.fromMe === true
-  if (fromMe || !from.endsWith('@c.us')) return
-  const phoneNumber = from.slice(0, -'@c.us'.length)
-  axios.post(presenceReleaseUrl, { phone_number: phoneNumber }, {
-    headers: { Authorization: `Bearer ${presenceReleaseToken}` },
-    timeout: 5000
-  }).catch((err) => {
-    logger.warn({ err: err.message, phoneNumber }, 'presence release webhook failed')
-  })
+  if (fromMe || from.endsWith('@g.us')) return
+
+  let phoneNumber = null
+  if (from.endsWith('@c.us')) {
+    phoneNumber = from.slice(0, -'@c.us'.length)
+  } else if (from.endsWith('@lid') && body.sessionId) {
+    try {
+      phoneNumber = await resolveLidToPhone(body.sessionId, from)
+    } catch (err) {
+      logger.warn({ err: err.message, from }, 'failed to resolve @lid contact')
+      return
+    }
+  }
+  if (!phoneNumber) return
+
+  try {
+    await axios.post(presenceReleaseUrl, { phone_number: phoneNumber }, {
+      headers: { Authorization: `Bearer ${presenceReleaseToken}` },
+      timeout: 5000
+    })
+  } catch (err) {
+    const status = err.response?.status
+    if (status === 404) return
+    logger.warn({ err: err.message, status, phoneNumber }, 'presence release webhook failed')
+  }
 }
 
 /**
