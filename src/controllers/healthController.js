@@ -58,7 +58,9 @@ const forwardPresenceRelease = async (body) => {
   let replyText = null
   let responseSuccess = false
   try {
-    const res = await axios.post(presenceReleaseUrl, { phone_number: phoneNumber }, {
+    const payload = { phone_number: phoneNumber }
+    if (messageBody) payload.message_text = messageBody
+    const res = await axios.post(presenceReleaseUrl, payload, {
       headers: { Authorization: `Bearer ${presenceReleaseToken}` },
       timeout: 5000
     })
