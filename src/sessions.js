@@ -2,10 +2,36 @@ const { Client, LocalAuth } = require('whatsapp-web.js')
 const fs = require('fs')
 const path = require('path')
 const sessions = new Map()
-const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock } = require('./config')
+const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock, welcomeMessageSessionId, welcomeMessageText } = require('./config')
 const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStatus, sleep, patchWWebLibrary } = require('./utils')
 const { logger } = require('./logger')
 const { initWebSocketServer, terminateWebSocketServer, triggerWebSocket } = require('./websocket')
+
+// Sends a fixed welcome message mentioning the joining members, but only for
+// the configured session (WELCOME_MESSAGE_SESSION_ID) and only in groups where
+// this account is an admin. Fire-and-forget: failures only log a warning.
+const sendWelcomeMessage = async (client, sessionId, notification) => {
+  if (!welcomeMessageSessionId || sessionId !== welcomeMessageSessionId) return
+  try {
+    const chat = await notification.getChat()
+    if (!chat?.isGroup) return
+
+    const myId = client.info?.wid?._serialized
+    // Skip our own join and address everyone else who joined.
+    const recipientIds = (notification?.recipientIds || []).filter((id) => id !== myId)
+    if (!recipientIds.length) return
+
+    // Only welcome in groups where this account is an admin.
+    const me = chat.participants?.find((p) => p.id?._serialized === myId)
+    if (!me || !(me.isAdmin || me.isSuperAdmin)) return
+
+    const mentions = recipientIds.map((id) => `@${id.split('@')[0]}`).join(' ')
+    const text = welcomeMessageText.replace('{mention}', mentions)
+    await chat.sendMessage(text, { mentions: recipientIds })
+  } catch (err) {
+    logger.warn({ err: err.message, sessionId }, 'failed to send welcome message')
+  }
+}
 
 // Function to validate if the session is ready
 const validateSession = async (sessionId) => {
@@ -276,6 +302,7 @@ const initializeEvents = (client, sessionId) => {
     client.on('group_join', (notification) => {
       triggerWebhook(sessionWebhook, sessionId, 'group_join', { notification })
       triggerWebSocket(sessionId, 'group_join', { notification })
+      sendWelcomeMessage(client, sessionId, notification)
     })
   }
 

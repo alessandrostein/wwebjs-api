@@ -28,6 +28,11 @@ const trustProxy = process.env.TRUST_PROXY ? (process.env.TRUST_PROXY).toLowerCa
 const presenceReleaseUrl = process.env.PRESENCE_RELEASE_URL || null
 const presenceReleaseToken = process.env.PRESENCE_RELEASE_TOKEN || null
 const presenceAutoReplyEnabled = (process.env.PRESENCE_AUTO_REPLY_ENABLED || '').toLowerCase() === 'true'
+// Auto welcome: when WELCOME_MESSAGE_SESSION_ID is set, new members joining a
+// group where that session's account is an admin get a fixed welcome message.
+// {mention} in the text is replaced by the @-tags of the joining members.
+const welcomeMessageSessionId = process.env.WELCOME_MESSAGE_SESSION_ID || null
+const welcomeMessageText = process.env.WELCOME_MESSAGE_TEXT || 'Seja bem vindo {mention} ao e-futebol'
 
 module.exports = {
   servicePort,
@@ -55,5 +60,7 @@ module.exports = {
   trustProxy,
   presenceReleaseUrl,
   presenceReleaseToken,
-  presenceAutoReplyEnabled
+  presenceAutoReplyEnabled,
+  welcomeMessageSessionId,
+  welcomeMessageText
 }
